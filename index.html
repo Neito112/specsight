@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpecSight — Field Document AI</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>SpecSight</h1>
+      <p class="tagline">Hybrid AI for construction field documents — on-device when you're offline, cloud when you need depth.</p>
+    </header>
+
+    <main>
+      <section class="card" id="input-card">
+        <h2>1. Add a field document</h2>
+        <p class="hint">Spec pages, drawings, material test reports — a photo (JPEG/PNG) works. Nothing leaves your device for the quick pass.</p>
+        <input type="file" id="doc-input" accept="image/jpeg,image/png" />
+        <div id="preview-wrap" hidden>
+          <img id="preview" alt="Selected document preview" />
+        </div>
+      </section>
+
+      <section class="card" id="analyze-card">
+        <h2>2. Analyze</h2>
+        <div class="buttons">
+          <button id="btn-quick" disabled>Quick pass (on-device)</button>
+          <button id="btn-deep" disabled>Deep analysis (cloud)</button>
+        </div>
+        <p class="hint" id="model-status">Initializing…</p>
+      </section>
+
+      <section class="card" id="result-card" hidden>
+        <h2>Result <span id="source-badge" class="badge"></span></h2>
+        <pre id="output"></pre>
+      </section>
+    </main>
+
+    <footer>
+      <p>Built with <strong>Firebase AI Logic hybrid inference</strong> — Gemini Nano on-device (Chrome), Gemini in the cloud for the heavy lifting. #BuildHybridAI 2026</p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
