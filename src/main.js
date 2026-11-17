@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { initializeAppCheck } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -10,11 +10,17 @@ import { firebaseConfig } from "./firebase-config.js";
 // swap to ReCaptchaEnterpriseProvider.
 // ---------------------------------------------------------------------------
 if (import.meta.env.DEV) {
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || true;
+  // Fixed debug token — registered in Firebase console (App Check > Apps > Manage debug tokens).
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || "b7f3c2a1-9d4e-4f68-8a2b-1c5e7d9f0a3b";
 }
 
 const app = initializeApp(firebaseConfig);
-initializeAppCheck(app, {}); // provider configured in Firebase console
+// The site key only matters in production; in dev the debug token above
+// bypasses attestation entirely.
+initializeAppCheck(app, {
+  provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_RECAPTCHA_SITE_KEY || "placeholder-site-key"),
+  isTokenAutoRefreshEnabled: true
+});
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 
@@ -53,14 +59,19 @@ const DOC_SCHEMA = {
   required: ["doc_type", "title", "key_values", "summary"]
 };
 
-const quickModel = getGenerativeModel(ai, {
-  mode: InferenceMode.PREFER_ON_DEVICE,
+const modelParams = {
   systemInstruction: SYSTEM_PROMPT,
   inCloudParams: {
     model: "gemini-3.5-flash-lite",
     generationConfig: { responseMimeType: "application/json", responseSchema: DOC_SCHEMA }
   }
-});
+};
+
+// Hybrid instance: on-device when the browser's Gemini Nano is actually ready.
+const quickModel = getGenerativeModel(ai, { ...modelParams, mode: InferenceMode.PREFER_ON_DEVICE });
+// Cloud-only instance: used when the on-device model is absent or not ready yet
+// (first-run download, unsupported browser, stuck availability probe).
+const cloudQuickModel = getGenerativeModel(ai, { ...modelParams, mode: InferenceMode.ONLY_IN_CLOUD });
 
 const deepModel = getGenerativeModel(ai, {
   mode: InferenceMode.PREFER_IN_CLOUD,
@@ -106,36 +117,64 @@ els.file.addEventListener("change", () => {
   els.resultCard.hidden = true;
 });
 
-els.quick.addEventListener("click", async () => {
+els.quick.addEventListener("click", () => {
   // initializeDeviceModel must run on/after user interaction, before queries.
   if (!deviceModelReady) {
-    els.status.textContent = "Preparing on-device model (first run downloads Gemini Nano)…";
-    try {
-      await quickModel.initializeDeviceModel((v) => {
-        els.status.textContent = `On-device model download: ${Math.round(v * 10000) / 100}%`;
+    els.status.textContent = "Quick pass — checking on-device model…";
+    onDeviceReady(2500)
+      .then((ready) => {
+        if (ready) {
+          quickModel
+            .initializeDeviceModel((v) => {
+              els.status.textContent = `On-device model download: ${Math.round(v * 10000) / 100}%`;
+            })
+            .then(() => {
+              deviceModelReady = true;
+              els.status.textContent = "On-device model ready — future passes run locally.";
+            })
+            .catch(() => {});
+          run(quickModel);
+        } else {
+          els.status.textContent = "On-device model not ready in this browser — quick pass via cloud (hybrid fallback).";
+          run(cloudQuickModel);
+        }
       });
-      deviceModelReady = true;
-    } catch (e) {
-      els.status.textContent = "On-device model unavailable here — requests will fall back to the cloud. (" + e.message + ")";
-    }
+  } else {
+    run(quickModel);
   }
-  await run(quickModel);
 });
 
 els.deep.addEventListener("click", () => run(deepModel));
+
+// Probe Chrome's built-in model with a hard timeout so a stuck probe can't
+// hang the UI (seen on some machines before the first model download).
+function onDeviceReady(timeoutMs) {
+  const probe = (async () => {
+    if (!window.LanguageModel || !window.LanguageModel.availability) return false;
+    const av = await window.LanguageModel.availability();
+    return av === "available";
+  })();
+  return Promise.race([
+    probe,
+    new Promise((res) => setTimeout(() => res(false), timeoutMs))
+  ]).catch(() => false);
+}
 
 async function run(model) {
   if (!currentFile) return;
   els.resultCard.hidden = false;
   els.output.textContent = "Analyzing…";
   els.badge.textContent = "";
+  const started = Date.now();
   try {
     const part = await fileToPart(currentFile);
     const prompt =
       "Analyze this construction document image. Return JSON per the schema.";
     const result = await model.generateContent([prompt, part]);
     const src = result.response.inferenceSource; // ON_DEVICE | IN_CLOUD
-    els.badge.textContent = src === "ON_DEVICE" ? "on-device · Gemini Nano" : "cloud · Gemini";
+    els.badge.textContent =
+      (src === "ON_DEVICE" ? "on-device · Gemini Nano" : "cloud · Gemini") +
+      ` · ${((Date.now() - started) / 1000).toFixed(1)}s`;
     els.badge.className = "badge " + (src === "ON_DEVICE" ? "badge-local" : "badge-cloud");
     const text = result.response.text();
     try {
