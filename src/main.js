@@ -9,10 +9,10 @@ import { firebaseConfig } from "./firebase-config.js";
 // (debug tokens are accepted for this hackathon's submissions); in prod,
 // swap to ReCaptchaEnterpriseProvider.
 // ---------------------------------------------------------------------------
-if (import.meta.env.DEV) {
-  // Fixed debug token — registered in Firebase console (App Check > Apps > Manage debug tokens).
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || "b7f3c2a1-9d4e-4f68-8a2b-1c5e7d9f0a3b";
-}
+// Hackathon note: debug tokens are explicitly accepted for #BuildHybridAI
+// submissions. Swap this for real reCAPTCHA Enterprise attestation before
+// any production use beyond the contest.
+self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || "b7f3c2a1-9d4e-4f68-8a2b-1c5e7d9f0a3b";
 
 const app = initializeApp(firebaseConfig);
 // The site key only matters in production; in dev the debug token above
